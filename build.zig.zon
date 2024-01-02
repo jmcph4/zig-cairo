@@ -1,0 +1,11 @@
+.{
+    .name = "zig-cairo",
+    .version = "0.1.0",
+    .dependencies = .{
+      .clap = .{
+        .url = "git+https://github.com/Hejsil/zig-clap.git#cf3a4e763831dd7e0845fef4f209f5c780eda375",
+        .hash = "1220b641ac5ed4187f293906201ee07f98423c942bf82e28c7c75a22d700b494c177",
+      },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
