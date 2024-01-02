@@ -4,6 +4,8 @@ const std = @import("std");
 const debug = std.debug;
 const io = std.io;
 
+const MAX_FILE_SIZE: usize = 33554432; // 32 MiB
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -12,8 +14,7 @@ pub fn main() !void {
     // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
-        \\<str>...
-        \\
+        \\<str>
     );
 
     // Initialize our diagnostics, which can be used for reporting useful errors.
@@ -30,8 +31,19 @@ pub fn main() !void {
     };
     defer res.deinit();
 
-    if (res.args.help != 0)
+    if (res.args.help != 0) {
         debug.print("--help\n", .{});
-    for (res.positionals) |pos|
-        debug.print("{s}\n", .{pos});
+    }
+
+    if (res.positionals.len == 0 or res.positionals[0].len == 0) {
+        return clap.usage(std.io.getStdErr().writer(), clap.Help, &params);
+    }
+
+    var file: std.fs.File = try std.fs.cwd().openFile(res.positionals[0], std.fs.File.OpenFlags{});
+    defer file.close();
+
+    const code: []u8 = try file.readToEndAlloc(gpa.allocator(), MAX_FILE_SIZE);
+    defer gpa.allocator().free(code);
+
+    debug.print("{any}", .{code}); // TODO(jmcph4): placeholder
 }
