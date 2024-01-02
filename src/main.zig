@@ -12,8 +12,6 @@ pub fn main() !void {
     // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
-        \\-n, --number <usize>   An option parameter, which takes a value.
-        \\-s, --string <str>...  An option parameter which can be specified multiple times.
         \\<str>...
         \\
     );
@@ -34,10 +32,6 @@ pub fn main() !void {
 
     if (res.args.help != 0)
         debug.print("--help\n", .{});
-    if (res.args.number) |n|
-        debug.print("--number = {}\n", .{n});
-    for (res.args.string) |s|
-        debug.print("--string = {s}\n", .{s});
     for (res.positionals) |pos|
         debug.print("{s}\n", .{pos});
 }
