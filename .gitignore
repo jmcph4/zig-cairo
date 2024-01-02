@@ -1,0 +1,7 @@
+msg.tmp
+*.tmp
+*.secret
+
+zig-out
+zig-cache
+
