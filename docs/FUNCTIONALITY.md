@@ -1,0 +1,4 @@
+# Functionality #
+
+ - [ ] Instruction decoding
+
