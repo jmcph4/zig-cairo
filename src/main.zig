@@ -1,8 +1,12 @@
-const clap = @import("clap");
 const std = @import("std");
-
 const debug = std.debug;
 const io = std.io;
+
+const native_endianness = @import("builtin").target.cpu.arch.endian();
+
+const clap = @import("clap");
+
+const decode = @import("decode");
 
 const MAX_FILE_SIZE: usize = 33554432; // 32 MiB
 
@@ -45,5 +49,16 @@ pub fn main() !void {
     const code: []u8 = try file.readToEndAlloc(gpa.allocator(), MAX_FILE_SIZE);
     defer gpa.allocator().free(code);
 
-    debug.print("{any}", .{code}); // TODO(jmcph4): placeholder
+    if (native_endianness == std.builtin.Endian.big) {
+        @byteSwap(code);
+    }
+
+    if (code.len % 8 != 0) {
+        @panic("Unaligned code");
+    }
+
+    const instructions: std.ArrayList(decode.Instruction) = try decode.decode(@alignCast(std.mem.bytesAsSlice(u64, code)), gpa.allocator());
+    defer instructions.deinit();
+
+    debug.print("{?}\n", .{instructions.items[0]});
 }

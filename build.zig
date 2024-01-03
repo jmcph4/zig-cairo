@@ -24,6 +24,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    exe.addModule("decode", b.createModule(.{ .source_file = std.build.FileSource.relative("src/decode.zig") }));
+
     const clap = b.dependency("clap", .{});
     exe.addModule("clap", clap.module("clap"));
 
