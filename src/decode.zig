@@ -30,6 +30,73 @@ pub const Opcode = enum(u3) {
 
         return false; // TODO(jmcph4): fix
     }
+
+    fn from_u3(x: u3) ?Opcode {
+        if (x > 0x04 or x == 0x03) {
+            return null;
+        } else {
+            return @enumFromInt(x);
+        }
+    }
+};
+
+pub const Register = enum(u1) {
+    AP = 0x00,
+    FP = 0x01,
+
+    fn from_u1(x: u1) Register {
+        return @enumFromInt(x);
+    }
+};
+
+pub const PcUpdate = enum(u3) {
+    REGULAR = 0x00,
+    JUMP_IMMEDIATE = 0x01,
+    JUMP_RELATIVE = 0x02,
+    JNZ = 0x04,
+
+    fn from_u3(x: u3) ?PcUpdate {
+        if (x > 0x04 or x == 0x03) {
+            return null;
+        } else {
+            return @enumFromInt(x);
+        }
+    }
+};
+
+pub const Res = enum(u2) {
+    OP1 = 0x00,
+    ADD = 0x01,
+    MUL = 0x02,
+    UNCONSTRAINED,
+};
+
+pub const Op1Address = enum(u3) {
+    IMMEDIATE = 0x00,
+    AP = 0x01,
+    FP = 0x02,
+    OP0 = 0x04,
+
+    fn from_u3(x: u3) ?Op1Address {
+        if (x > 0x04 or x == 0x03) {
+            return null;
+        } else {
+            return @enumFromInt(x);
+        }
+    }
+};
+
+pub const ApUpdate = enum(u2) {
+    REGULAR,
+    ADD,
+    ADD1,
+    ADD2,
+};
+
+pub const FpUpdate = enum(u3) {
+    REGULAR,
+    AP_PLUS_2,
+    DST,
 };
 
 const FlagMask = enum(u16) {
