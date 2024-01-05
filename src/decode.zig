@@ -159,35 +159,35 @@ const FlagOffset = enum(u16) {
     OPCODE = 12,
 };
 
-pub fn decode_flags(bytes: u16) Flags {
+pub fn decode_flags(bytes: u16) DecodeError!Flags {
     const pc_update: ?PcUpdate = PcUpdate.from_u3(@truncate((bytes & @intFromEnum(FlagMask.PC_UPDATE)) >> @intFromEnum(FlagOffset.PC_UPDATE)));
 
     if (pc_update == null) {
-        @panic("Invalid PC_UPDATE"); // TODO(jmcph4): explicit decoding error
+        return DecodeError.INVALID_PC_UPDATE;
     }
 
     const opcode: ?Opcode = Opcode.from_u3(@truncate(@as(u16, (bytes & @intFromEnum(FlagMask.OPCODE)) >> @intFromEnum(FlagOffset.OPCODE))));
 
     if (opcode == null) {
-        @panic("Invalid opcode"); // TODO(jmcph4): explicit decoding error
+        return DecodeError.INVALID_OPCODE;
     }
 
     const op1_src: ?Op1Address = Op1Address.from_u3(@truncate((bytes & @intFromEnum(FlagMask.OP1_SRC)) >> @intFromEnum(FlagOffset.OP1_SRC)));
 
     if (op1_src == null) {
-        @panic("Invalid OP1_SRC"); // TODO(jmcph4): explicit decoding error
+        return DecodeError.INVALID_OP1_SRC;
     }
 
     const res_logic: ?Res = Res.init(@truncate((bytes & @intFromEnum(FlagMask.RES_LOGIC)) >> @intFromEnum(FlagOffset.RES_LOGIC)), pc_update.?);
 
     if (res_logic == null) {
-        @panic("Invalid RES_LOGIC"); // TODO(jmcph4): explicit decoding error
+        return DecodeError.INVALID_RES_LOGIC;
     }
 
     const ap_update: ?ApUpdate = ApUpdate.init(@truncate((bytes & @intFromEnum(FlagMask.AP_UPDATE)) >> @intFromEnum(FlagOffset.AP_UPDATE)), opcode.?);
 
     if (ap_update == null) {
-        @panic("Invalid AP_UPDATE"); // TODO(jmcph4): explicit decoding error
+        return DecodeError.INVALID_AP_UPDATE;
     }
 
     return Flags{
@@ -201,7 +201,7 @@ pub fn decode_flags(bytes: u16) Flags {
     };
 }
 
-pub fn decode_values(word: u64) Instruction {
+pub fn decode_values(word: u64) !Instruction {
     const OFF_DST_OFF: u64 = 0;
     const OFF_OP0_OFF: u64 = 16;
     const OFF_OP1_OFF: u64 = 32;
@@ -211,19 +211,27 @@ pub fn decode_values(word: u64) Instruction {
         .off_dst = @truncate((word >> OFF_DST_OFF) & 0xFFFF),
         .off_op0 = @truncate((word >> OFF_OP0_OFF) & 0xFFFF),
         .off_op1 = @truncate((word >> OFF_OP1_OFF) & 0xFFFF),
-        .flags = decode_flags(@truncate((word >> FLAGS_OFF) & 0xFFFF)),
+        .flags = try decode_flags(@truncate((word >> FLAGS_OFF) & 0xFFFF)),
         .imm = null,
     };
 }
 
-pub fn decode(code: []const u64, allocator: std.mem.Allocator) anyerror!std.ArrayList(Instruction) {
+pub const DecodeError = error{
+    INVALID_OPCODE,
+    INVALID_PC_UPDATE,
+    INVALID_AP_UPDATE,
+    INVALID_OP1_SRC,
+    INVALID_RES_LOGIC,
+};
+
+pub fn decode(code: []const u64, allocator: std.mem.Allocator) !std.ArrayList(Instruction) {
     var instructions: std.ArrayList(Instruction) = std.ArrayList(Instruction).init(allocator);
 
     var i: usize = 0;
 
     while (i < code.len) {
         const curr_word: u64 = code[i];
-        var curr_inst: Instruction = decode_values(curr_word);
+        var curr_inst: Instruction = try decode_values(curr_word);
 
         if (curr_inst.flags.opcode.immediate()) {
             curr_inst.imm = code[i + 1];
