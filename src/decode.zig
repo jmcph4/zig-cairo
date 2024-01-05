@@ -1,12 +1,12 @@
 const std = @import("std");
 
 pub const Flags = struct {
-    dst_reg: u1,
-    op0_reg: u1,
-    op1_src: u3,
-    res_logic: u2,
-    pc_update: u3,
-    ap_update: u2,
+    dst_reg: Register,
+    op0_reg: Register,
+    op1_src: Op1Address,
+    res_logic: Res,
+    pc_update: PcUpdate,
+    ap_update: ApUpdate,
     opcode: Opcode,
 };
 
@@ -69,13 +69,29 @@ pub const Res = enum(u2) {
     ADD = 0x01,
     MUL = 0x02,
     UNCONSTRAINED,
+
+    fn init(x: u2, pc_update: PcUpdate) ?Res {
+        if (x == 0x00) {
+            if (pc_update == PcUpdate.JNZ) {
+                return Res.UNCONSTRAINED;
+            } else {
+                return Res.OP1;
+            }
+        } else if (x == 0x01) {
+            return Res.ADD;
+        } else if (x == 0x02) {
+            return Res.MUL;
+        } else {
+            return null;
+        }
+    }
 };
 
 pub const Op1Address = enum(u3) {
-    IMMEDIATE = 0x00,
-    AP = 0x01,
+    OP0 = 0x00,
+    IMMEDIATE = 0x01,
     FP = 0x02,
-    OP0 = 0x04,
+    AP = 0x04,
 
     fn from_u3(x: u3) ?Op1Address {
         if (x > 0x04 or x == 0x03) {
@@ -91,12 +107,36 @@ pub const ApUpdate = enum(u2) {
     ADD,
     ADD1,
     ADD2,
+
+    fn init(x: u2, opcode: Opcode) ?ApUpdate {
+        if (x == 0x00) {
+            if (opcode == Opcode.CALL) {
+                return ApUpdate.ADD2;
+            } else {
+                return ApUpdate.REGULAR;
+            }
+        } else if (x == 0x01) {
+            return ApUpdate.ADD;
+        } else if (x == 0x02) {
+            return ApUpdate.ADD1;
+        } else {
+            return null;
+        }
+    }
 };
 
 pub const FpUpdate = enum(u3) {
     REGULAR,
     AP_PLUS_2,
     DST,
+
+    fn from_opcode(opcode: Opcode) FpUpdate {
+        switch (opcode) {
+            Opcode.CALL => FpUpdate.AP_PLUS_2,
+            Opcode.RET => FpUpdate.DST,
+            _ => FpUpdate.REGULAR,
+        }
+    }
 };
 
 const FlagMask = enum(u16) {
@@ -120,14 +160,44 @@ const FlagOffset = enum(u16) {
 };
 
 pub fn decode_flags(bytes: u16) Flags {
+    const pc_update: ?PcUpdate = PcUpdate.from_u3(@truncate((bytes & @intFromEnum(FlagMask.PC_UPDATE)) >> @intFromEnum(FlagOffset.PC_UPDATE)));
+
+    if (pc_update == null) {
+        @panic("Invalid PC_UPDATE"); // TODO(jmcph4): explicit decoding error
+    }
+
+    const opcode: ?Opcode = Opcode.from_u3(@truncate(@as(u16, (bytes & @intFromEnum(FlagMask.OPCODE)) >> @intFromEnum(FlagOffset.OPCODE))));
+
+    if (opcode == null) {
+        @panic("Invalid opcode"); // TODO(jmcph4): explicit decoding error
+    }
+
+    const op1_src: ?Op1Address = Op1Address.from_u3(@truncate((bytes & @intFromEnum(FlagMask.OP1_SRC)) >> @intFromEnum(FlagOffset.OP1_SRC)));
+
+    if (op1_src == null) {
+        @panic("Invalid OP1_SRC"); // TODO(jmcph4): explicit decoding error
+    }
+
+    const res_logic: ?Res = Res.init(@truncate((bytes & @intFromEnum(FlagMask.RES_LOGIC)) >> @intFromEnum(FlagOffset.RES_LOGIC)), pc_update.?);
+
+    if (res_logic == null) {
+        @panic("Invalid RES_LOGIC"); // TODO(jmcph4): explicit decoding error
+    }
+
+    const ap_update: ?ApUpdate = ApUpdate.init(@truncate((bytes & @intFromEnum(FlagMask.AP_UPDATE)) >> @intFromEnum(FlagOffset.AP_UPDATE)), opcode.?);
+
+    if (ap_update == null) {
+        @panic("Invalid AP_UPDATE"); // TODO(jmcph4): explicit decoding error
+    }
+
     return Flags{
-        .dst_reg = @truncate((bytes & @intFromEnum(FlagMask.DST_REG)) >> @intFromEnum(FlagOffset.DST_REG)),
-        .op0_reg = @truncate((bytes & @intFromEnum(FlagMask.OP0_REG)) >> @intFromEnum(FlagOffset.OP0_REG)),
-        .op1_src = @truncate((bytes & @intFromEnum(FlagMask.OP1_SRC)) >> @intFromEnum(FlagOffset.OP1_SRC)),
-        .res_logic = @truncate((bytes & @intFromEnum(FlagMask.RES_LOGIC)) >> @intFromEnum(FlagOffset.RES_LOGIC)),
-        .pc_update = @truncate((bytes & @intFromEnum(FlagMask.PC_UPDATE)) >> @intFromEnum(FlagOffset.PC_UPDATE)),
-        .ap_update = @truncate((bytes & @intFromEnum(FlagMask.AP_UPDATE)) >> @intFromEnum(FlagOffset.AP_UPDATE)),
-        .opcode = @enumFromInt(@as(u16, (bytes & @intFromEnum(FlagMask.OPCODE)) >> @intFromEnum(FlagOffset.OPCODE))),
+        .dst_reg = Register.from_u1(@truncate((bytes & @intFromEnum(FlagMask.DST_REG)) >> @intFromEnum(FlagOffset.DST_REG))),
+        .op0_reg = Register.from_u1(@truncate((bytes & @intFromEnum(FlagMask.OP0_REG)) >> @intFromEnum(FlagOffset.OP0_REG))),
+        .op1_src = op1_src.?,
+        .res_logic = res_logic.?,
+        .pc_update = pc_update.?,
+        .ap_update = ap_update.?,
+        .opcode = opcode.?,
     };
 }
 
@@ -183,12 +253,12 @@ test "decode_flags_call_add_jmp_add_imm_fp_fp" {
     try std.testing.expectEqual(@as(u16, 0x8000), instruction.off_op1);
 
     // flags
-    try std.testing.expectEqual(@as(u1, 1), instruction.flags.dst_reg);
-    try std.testing.expectEqual(@as(u1, 1), instruction.flags.op0_reg);
-    try std.testing.expectEqual(@as(u3, 1), instruction.flags.op1_src);
-    try std.testing.expectEqual(@as(u2, 1), instruction.flags.res_logic);
-    try std.testing.expectEqual(@as(u3, 1), instruction.flags.pc_update);
-    try std.testing.expectEqual(@as(u2, 1), instruction.flags.ap_update);
+    try std.testing.expectEqual(Register.FP, instruction.flags.dst_reg);
+    try std.testing.expectEqual(Register.FP, instruction.flags.op0_reg);
+    try std.testing.expectEqual(Op1Address.IMMEDIATE, instruction.flags.op1_src);
+    try std.testing.expectEqual(Res.ADD, instruction.flags.res_logic);
+    try std.testing.expectEqual(PcUpdate.JUMP_IMMEDIATE, instruction.flags.pc_update);
+    try std.testing.expectEqual(ApUpdate.ADD, instruction.flags.ap_update);
     try std.testing.expectEqual(Opcode.CALL, instruction.flags.opcode);
 
     // immediate
@@ -210,12 +280,12 @@ test "decode_flags_ret_add1_jmp_rel_mul_fp_ap_ap" {
     try std.testing.expectEqual(@as(u16, 0x8000), instruction.off_op1);
 
     // flags
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.dst_reg);
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.op0_reg);
-    try std.testing.expectEqual(@as(u3, 2), instruction.flags.op1_src);
-    try std.testing.expectEqual(@as(u2, 2), instruction.flags.res_logic);
-    try std.testing.expectEqual(@as(u3, 2), instruction.flags.pc_update);
-    try std.testing.expectEqual(@as(u2, 2), instruction.flags.ap_update);
+    try std.testing.expectEqual(Register.AP, instruction.flags.dst_reg);
+    try std.testing.expectEqual(Register.AP, instruction.flags.op0_reg);
+    try std.testing.expectEqual(Op1Address.FP, instruction.flags.op1_src);
+    try std.testing.expectEqual(Res.MUL, instruction.flags.res_logic);
+    try std.testing.expectEqual(PcUpdate.JUMP_RELATIVE, instruction.flags.pc_update);
+    try std.testing.expectEqual(ApUpdate.ADD1, instruction.flags.ap_update);
     try std.testing.expectEqual(Opcode.RET, instruction.flags.opcode);
 
     // immediate
@@ -237,12 +307,12 @@ test "decode_flags_assrt_add_jnz_mul_ap_ap_ap" {
     try std.testing.expectEqual(@as(u16, 0x8000), instruction.off_op1);
 
     // flags
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.dst_reg);
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.op0_reg);
-    try std.testing.expectEqual(@as(u3, 4), instruction.flags.op1_src);
-    try std.testing.expectEqual(@as(u2, 2), instruction.flags.res_logic);
-    try std.testing.expectEqual(@as(u3, 4), instruction.flags.pc_update);
-    try std.testing.expectEqual(@as(u2, 2), instruction.flags.ap_update);
+    try std.testing.expectEqual(Register.AP, instruction.flags.dst_reg);
+    try std.testing.expectEqual(Register.AP, instruction.flags.op0_reg);
+    try std.testing.expectEqual(Op1Address.AP, instruction.flags.op1_src);
+    try std.testing.expectEqual(Res.MUL, instruction.flags.res_logic);
+    try std.testing.expectEqual(PcUpdate.JNZ, instruction.flags.pc_update);
+    try std.testing.expectEqual(ApUpdate.ADD1, instruction.flags.ap_update);
     try std.testing.expectEqual(Opcode.ASSERT_EQ, instruction.flags.opcode);
 
     // immediate
@@ -264,12 +334,12 @@ test "decode_flags_assrt_add2_jnz_uncon_op0_ap_ap" {
     try std.testing.expectEqual(@as(u16, 0x8000), instruction.off_op1);
 
     // flags
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.dst_reg);
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.op0_reg);
-    try std.testing.expectEqual(@as(u3, 0), instruction.flags.op1_src);
-    try std.testing.expectEqual(@as(u2, 0), instruction.flags.res_logic);
-    try std.testing.expectEqual(@as(u3, 4), instruction.flags.pc_update);
-    try std.testing.expectEqual(@as(u2, 0), instruction.flags.ap_update);
+    try std.testing.expectEqual(Register.AP, instruction.flags.dst_reg);
+    try std.testing.expectEqual(Register.AP, instruction.flags.op0_reg);
+    try std.testing.expectEqual(Op1Address.OP0, instruction.flags.op1_src);
+    try std.testing.expectEqual(Res.UNCONSTRAINED, instruction.flags.res_logic);
+    try std.testing.expectEqual(PcUpdate.JNZ, instruction.flags.pc_update);
+    try std.testing.expectEqual(ApUpdate.REGULAR, instruction.flags.ap_update);
     try std.testing.expectEqual(Opcode.ASSERT_EQ, instruction.flags.opcode);
 
     // immediate
@@ -291,12 +361,12 @@ test "decode_flags_nop_regu_regu_op1_op0_ap_ap" {
     try std.testing.expectEqual(@as(u16, 0x8000), instruction.off_op1);
 
     // flags
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.dst_reg);
-    try std.testing.expectEqual(@as(u1, 0), instruction.flags.op0_reg);
-    try std.testing.expectEqual(@as(u3, 0), instruction.flags.op1_src);
-    try std.testing.expectEqual(@as(u2, 0), instruction.flags.res_logic);
-    try std.testing.expectEqual(@as(u3, 0), instruction.flags.pc_update);
-    try std.testing.expectEqual(@as(u2, 0), instruction.flags.ap_update);
+    try std.testing.expectEqual(Register.AP, instruction.flags.dst_reg);
+    try std.testing.expectEqual(Register.AP, instruction.flags.op0_reg);
+    try std.testing.expectEqual(Op1Address.OP0, instruction.flags.op1_src);
+    try std.testing.expectEqual(Res.OP1, instruction.flags.res_logic);
+    try std.testing.expectEqual(PcUpdate.REGULAR, instruction.flags.pc_update);
+    try std.testing.expectEqual(ApUpdate.REGULAR, instruction.flags.ap_update);
     try std.testing.expectEqual(Opcode.NOP, instruction.flags.opcode);
 
     // immediate
