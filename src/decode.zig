@@ -160,6 +160,12 @@ const FlagOffset = enum(u16) {
 };
 
 pub fn decode_flags(bytes: u16) DecodeError!Flags {
+    const HIGH_BIT: u16 = 1 << 15;
+
+    if (bytes & HIGH_BIT != 0) {
+        return DecodeError.NON_ZERO_HIGH_BIT;
+    }
+
     const pc_update: ?PcUpdate = PcUpdate.from_u3(@truncate((bytes & @intFromEnum(FlagMask.PC_UPDATE)) >> @intFromEnum(FlagOffset.PC_UPDATE)));
 
     if (pc_update == null) {
@@ -222,6 +228,7 @@ pub const DecodeError = error{
     INVALID_AP_UPDATE,
     INVALID_OP1_SRC,
     INVALID_RES_LOGIC,
+    NON_ZERO_HIGH_BIT,
 };
 
 pub fn decode(code: []const u64, allocator: std.mem.Allocator) !std.ArrayList(Instruction) {
@@ -244,6 +251,60 @@ pub fn decode(code: []const u64, allocator: std.mem.Allocator) !std.ArrayList(In
     }
 
     return instructions;
+}
+
+test "non_zero_high_bit" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x94A7800080008000};
+
+    try std.testing.expectError(DecodeError.NON_ZERO_HIGH_BIT, decode(&code, gpa.allocator()));
+}
+
+test "invalid_op1_reg" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x294F800080008000};
+
+    try std.testing.expectError(DecodeError.INVALID_OP1_SRC, decode(&code, gpa.allocator()));
+}
+
+test "invalid_pc_update" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x29A8800080008000};
+
+    try std.testing.expectError(DecodeError.INVALID_PC_UPDATE, decode(&code, gpa.allocator()));
+}
+
+test "invalid_res_logic" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x2968800080008000};
+
+    try std.testing.expectError(DecodeError.INVALID_RES_LOGIC, decode(&code, gpa.allocator()));
+}
+
+test "invalid_opcode" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x3948800080008000};
+
+    try std.testing.expectError(DecodeError.INVALID_OPCODE, decode(&code, gpa.allocator()));
+}
+
+test "invalid_ap_update" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const code: [1]u64 = [1]u64{0x2D48800080008000};
+
+    try std.testing.expectError(DecodeError.INVALID_AP_UPDATE, decode(&code, gpa.allocator()));
 }
 
 test "decode_flags_call_add_jmp_add_imm_fp_fp" {
