@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.addModule("decode", b.createModule(.{ .source_file = std.build.FileSource.relative("src/decode.zig") }));
+    exe.addModule("types", b.createModule(.{ .source_file = std.build.FileSource.relative("src/types.zig") }));
 
     const clap = b.dependency("clap", .{});
     exe.addModule("clap", clap.module("clap"));
@@ -64,6 +65,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    unit_tests.addModule("decode", b.createModule(.{ .source_file = std.build.FileSource.relative("src/decode.zig") }));
+    unit_tests.addModule("types", b.createModule(.{ .source_file = std.build.FileSource.relative("src/types.zig") }));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
