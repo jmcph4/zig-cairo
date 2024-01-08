@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const types = @import("types.zig");
+pub const types = @import("types");
 
 const Instruction = types.Instruction;
 const Flags = types.Flags;
